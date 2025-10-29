@@ -27,3 +27,21 @@ def load_flows(path: Path) -> Sequence[HTTPFlow]:
         except FlowReadException as error:
             raise SystemExit(f"Failed to read flows: {error}") from error
     return flows
+
+
+def filter_flows_by_content_type(flows: Sequence[HTTPFlow], content_type: str) -> list[HTTPFlow]:
+    """Return flows whose request Content-Type header contains the provided value."""
+
+    if not content_type:
+        return list(flows)
+
+    needle = content_type.lower()
+    filtered: list[HTTPFlow] = []
+    for flow in flows:
+        request = flow.request
+        if not request:
+            continue
+        header_value = request.headers.get("content-type")
+        if header_value and needle in header_value.lower():
+            filtered.append(flow)
+    return filtered

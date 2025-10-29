@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from argparse import ArgumentParser
 from pathlib import Path
 from typing import Iterable
 
@@ -11,14 +12,24 @@ from flows import load_flows
 
 
 def main(args: Iterable[str]) -> None:
-    argv = list(args)
-    if len(argv) != 1:
-        raise SystemExit("Usage: python main.py <flows-file>")
+    parser = ArgumentParser(description="View mitmproxy HTTP flows in a Textual UI.")
+    parser.add_argument("flows_file", help="Path to a mitmproxy .flows or .dump file to load.")
+    parser.add_argument(
+        "--content-type",
+        dest="content_type",
+        metavar="TYPE",
+        help="Only include requests whose Content-Type header contains the given value.",
+    )
+    options = parser.parse_args(list(args))
 
-    flows_path = Path(argv[0]).expanduser().resolve()
+    flows_path = Path(options.flows_file).expanduser().resolve()
     flows = load_flows(flows_path)
 
-    app = FlowViewerApp(flows=flows, source_path=flows_path)
+    app = FlowViewerApp(
+        flows=flows,
+        source_path=flows_path,
+        content_type_filter=options.content_type,
+    )
     app.run()
 
 
