@@ -236,6 +236,7 @@ class FlowListScreen(Screen):
                     return
                 except TypeError:
                     continue
+        table.cursor_coordinate = (row, table.cursor_coordinate.column)
 
     def update_flows(
         self,
@@ -363,6 +364,14 @@ class FlowListScreen(Screen):
     def _set_status_message(self, message: str) -> None:
         self._status_message = message or None
         self._update_status_bar()
+
+    def focus_flow(self, index: int) -> None:
+        table = self.query_one("#flow-table", DataTable)
+        if not table.row_count:
+            return
+        row = max(0, min(index, table.row_count - 1))
+        table.cursor_coordinate = (row, table.cursor_coordinate.column)
+        self._scroll_table_to_row(table, row, align="center")
 
     def _copy_flow_section(self, section: str) -> None:
         flow = self._get_selected_flow()

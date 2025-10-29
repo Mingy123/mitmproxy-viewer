@@ -75,3 +75,8 @@ class FlowViewerApp(App):
 
     def get_flows(self) -> Sequence[HTTPFlow]:
         return list(self._filtered_flows)
+
+    def focus_flow_in_list(self, index: int) -> None:
+        if self._flow_list_screen is None:
+            return
+        self._flow_list_screen.focus_flow(index)
