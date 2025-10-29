@@ -254,8 +254,8 @@ class FlowListScreen(Screen):
         status = self.query_one(StatusBar)
         status_text = (
             "Loaded "
-            f"{len(self._flows)} flows from {self._source_path.name}"
-            " | j/k move, q quit, Enter details"
+            f"{len(self._flows)} flows"
+            " | q to quit"
         )
         if self._content_type_filter:
             status_text += f" | Filter: {self._content_type_filter}"
@@ -394,7 +394,7 @@ class FlowListScreen(Screen):
         else:
             self.app.set_content_type_filter(
                 value,
-                status_message=f"Content-Type filter set to {value}",
+                status_message=f"Content-Type: {value}",
             )
 
     def _handle_copy_command(self, remainder: str, _: str) -> None:
@@ -407,6 +407,7 @@ class FlowListScreen(Screen):
         aliases = {
             "req": "request",
             "request": "request",
+            "res": "response",
             "resp": "response",
             "response": "response",
         }
