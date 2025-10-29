@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Sequence
 
@@ -9,6 +10,8 @@ from mitmproxy.http import HTTPFlow
 from textual.app import ComposeResult
 from textual.screen import Screen
 from textual.widgets import DataTable, Header, Input
+from rich.style import Style
+from rich.text import Text
 
 from widgets.status_bar import StatusBar
 from pages.flow_detail import FlowDetailScreen
@@ -16,6 +19,33 @@ from pages.flow_detail import FlowDetailScreen
 
 class FlowListScreen(Screen):
     """Screen displaying all captured HTTP flows in a table."""
+
+    _COLOR_PALETTE: Sequence[str] = (
+        "bright_red",
+        "bright_green",
+        "bright_yellow",
+        "bright_blue",
+        "bright_magenta",
+        "bright_cyan",
+        "bright_white",
+        "red",
+        "green",
+        "yellow",
+        "blue",
+        "magenta",
+        "cyan",
+        "white",
+        "orange3",
+        "plum1",
+    )
+
+    _STATUS_COLORS: dict[str, str] = {
+        "1": "bright_cyan",
+        "2": "bright_green",
+        "3": "bright_yellow",
+        "4": "bright_magenta",
+        "5": "bright_red",
+    }
 
     CSS = """
     FlowListScreen {
@@ -73,7 +103,6 @@ class FlowListScreen(Screen):
 
     def on_mount(self) -> None:
         table = self.query_one("#flow-table", DataTable)
-        table.add_columns("#", "Method", "Host", "Path", "Status")
         self._populate_table()
         table.cursor_type = "row"
         table.zebra_stripes = True
@@ -232,16 +261,34 @@ class FlowListScreen(Screen):
             previous_column = 0
         table.clear()
         if not table.columns:
-            table.add_columns("#", "Method", "Host", "Path", "Status")
+            table.add_columns("#", "HTTPS", "Method", "Host", "Path", "Status")
         for index, flow in enumerate(self._flows, start=1):
             request = flow.request
             response = flow.response
+            https_value = "-"
+            if request:
+                if (request.scheme or "").lower() == "https":
+                    https_value = "Yes"
+                else:
+                    https_value = "No"
+            method_value = request.method if request else "-"
+            host_source_value = request.host if request else "-"
+            host_value = host_source_value
+            path_value = request.path if request else "-"
+            host_value = self._limit_cell_text(host_value, 20)
+            path_value = self._limit_cell_text(path_value, 55)
+            method_cell = self._text_with_palette(method_value)
+            host_cell = self._text_with_palette(host_value, source_value=host_source_value)
+            status_value = str(response.status_code) if response else "-"
+            status_cell = self._status_text(status_value)
+            https_cell = self._https_text(https_value)
             table.add_row(
                 str(index),
-                request.method if request else "-",
-                request.host if request else "-",
-                request.path if request else "-",
-                str(response.status_code) if response else "-",
+                https_cell,
+                method_cell,
+                host_cell,
+                path_value,
+                status_cell,
                 key=str(index - 1),
             )
         if table.row_count:
@@ -366,6 +413,44 @@ class FlowListScreen(Screen):
             except UnicodeDecodeError:
                 return raw_content.decode("utf-8", errors="replace")
         return ""
+
+    @staticmethod
+    def _limit_cell_text(value: str, limit: int) -> str:
+        if len(value) <= limit:
+            return value
+        if limit <= 3:
+            return value[:limit]
+        return f"{value[: limit - 3]}..."
+
+    @staticmethod
+    def _text_with_palette(display_value: str, *, source_value: str | None = None) -> Text:
+        if not display_value or display_value == "-":
+            return Text(display_value)
+        base = source_value if source_value is not None else display_value
+        palette = FlowListScreen._COLOR_PALETTE
+        index = FlowListScreen._hash_to_palette_index(base, len(palette))
+        color_name = palette[index]
+        return Text(display_value, style=Style(color=color_name))
+
+    @staticmethod
+    def _hash_to_palette_index(value: str, palette_size: int) -> int:
+        digest = hashlib.sha1(value.encode("utf-8", errors="ignore")).digest()
+        return int.from_bytes(digest[:2], "big") % max(1, palette_size)
+
+    @staticmethod
+    def _status_text(status_value: str) -> Text:
+        if len(status_value) < 1 or not status_value[0].isdigit():
+            return Text(status_value)
+        color = FlowListScreen._STATUS_COLORS.get(status_value[0])
+        if not color:
+            return Text(status_value)
+        return Text(status_value, style=Style(color=color))
+
+    @staticmethod
+    def _https_text(value: str) -> Text:
+        if value.lower() == "no":
+            return Text(value, style=Style(color="bright_red", bold=True))
+        return Text(value)
 
     def _handle_set_command(self, remainder: str, _: str) -> None:
         remainder = remainder.strip()
