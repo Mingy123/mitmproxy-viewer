@@ -47,6 +47,11 @@ class FlowListScreen(Screen):
         "5": "bright_red",
     }
 
+    _COLUMN_COUNT = 6
+    _COLUMN_SEPARATOR_WIDTH = 3
+    _TABLE_PADDING = 4
+    _MIN_PATH_WIDTH = 8
+
     CSS = """
     FlowListScreen {
         layout: vertical;
@@ -277,10 +282,17 @@ class FlowListScreen(Screen):
             host_value = host_source_value
             path_value = request.path if request else "-"
             host_value = self._limit_cell_text(host_value, 20)
-            path_value = self._limit_cell_text(path_value, 55)
+            status_value = str(response.status_code) if response else "-"
+            path_limit = self._calculate_path_limit(
+                str(index),
+                https_value,
+                method_value,
+                host_value,
+                status_value,
+            ) - 10
+            path_value = self._limit_cell_text(path_value, path_limit)
             method_cell = self._text_with_palette(method_value)
             host_cell = self._text_with_palette(host_value, source_value=host_source_value)
-            status_value = str(response.status_code) if response else "-"
             status_cell = self._status_text(status_value)
             https_cell = self._https_text(https_value)
             table.add_row(
@@ -460,6 +472,27 @@ class FlowListScreen(Screen):
         if value.lower() == "no":
             return Text(value, style=Style(color="bright_red", bold=True))
         return Text(value)
+
+    def _calculate_path_limit(
+        self,
+        index_value: str,
+        https_value: str,
+        method_value: str,
+        host_value: str,
+        status_value: str,
+    ) -> int:
+        screen_width = getattr(self.size, "width", 0) or 80
+        other_column_width = (
+            len(index_value)
+            + len(https_value)
+            + len(method_value)
+            + len(host_value)
+            + len(status_value)
+        )
+        separator_width = (self._COLUMN_COUNT - 1) * self._COLUMN_SEPARATOR_WIDTH
+        # Estimate the renderable characters left for the path column after other cells and spacing.
+        available = screen_width - other_column_width - separator_width - self._TABLE_PADDING
+        return max(self._MIN_PATH_WIDTH, available)
 
     def _handle_set_command(self, remainder: str, _: str) -> None:
         remainder = remainder.strip()
