@@ -10,7 +10,7 @@ from mitmproxy.http import HTTPFlow
 from textual.app import ComposeResult
 from textual.containers import Container, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Header, Static
+from textual.widgets import Header, Static, Input
 
 from widgets.status_bar import StatusBar
 
@@ -42,6 +42,13 @@ class FlowDetailScreen(Screen):
         padding: 1;
         border: solid $surface;
     }
+
+    #command-input {
+        dock: bottom;
+        height: 3;
+        padding: 0 1;
+        display: none;
+    }
     """
 
     BINDINGS = [
@@ -53,6 +60,7 @@ class FlowDetailScreen(Screen):
         ("l", "show_response_panel", "Show Response"),
         ("j", "next_flow", "Next Flow"),
         ("k", "previous_flow", "Previous Flow"),
+        (":", "open_command", "Command Mode"),
     ]
 
     def __init__(self, *, flow: HTTPFlow, position: int, total: int, source_path: Path) -> None:
@@ -68,6 +76,9 @@ class FlowDetailScreen(Screen):
         else:
             self._active_panel = "request"
         self._panel_order = ("request", "response")
+        self._status_message: str | None = None
+        self._command_input: Input | None = None
+        self._command_active = False
 
     def compose(self) -> ComposeResult:
         request_renderable = self._build_request_detail(self._flow)
@@ -79,14 +90,22 @@ class FlowDetailScreen(Screen):
             id="detail-container",
         )
         yield StatusBar()
+        command_input = Input(id="command-input", placeholder=": command")
+        command_input.styles.display = "none"
+        yield command_input
 
     def on_mount(self) -> None:
         self._update_panel_visibility()
         self._update_status_bar()
+        self._command_input = self.query_one("#command-input", Input)
+        self._command_input.styles.display = "none"
 
     def action_go_back(self) -> None:
         """Return to the previous screen."""
 
+        if self._command_prompt_visible():
+            self._hide_command_prompt()
+            return
         self.app.pop_screen()
 
     def action_cycle_detail_panel(self) -> None:
@@ -114,6 +133,15 @@ class FlowDetailScreen(Screen):
         """Jump to the previous flow when available."""
 
         self._navigate_flow(-1)
+
+    def action_open_command(self) -> None:
+        if self._command_prompt_visible():
+            return
+        self._show_command_prompt(":")
+
+    def action_cancel_command(self) -> None:
+        if self._command_prompt_visible():
+            self._hide_command_prompt()
 
     @staticmethod
     def _build_request_detail(flow: HTTPFlow) -> Text:
@@ -186,9 +214,13 @@ class FlowDetailScreen(Screen):
     def _update_status_bar(self) -> None:
         status = self.query_one(StatusBar)
         view_label = "Request" if self._active_panel == "request" else "Response"
-        status.update(
-            f"Flow {self._position + 1}/{self._total} | {view_label} view | Tab/h/l switch view | j/k next/prev | Esc/Backspace back, q quit"
+        status_text = (
+            f"Flow {self._position + 1}/{self._total}"
+            " | Esc/Bksp back, q quit"
         )
+        if self._status_message:
+            status_text += f" | {self._status_message}"
+        status.update(status_text)
 
     def _navigate_flow(self, offset: int) -> None:
         app = cast("FlowViewerApp", self.app)
@@ -203,6 +235,7 @@ class FlowDetailScreen(Screen):
         self._flow = flows[new_index]
         self._position = new_index
         self._total = len(flows)
+        self._set_status_message(None)
         app.focus_flow_in_list(new_index)
         self._refresh_detail_content()
 
@@ -224,6 +257,130 @@ class FlowDetailScreen(Screen):
         self._active_panel = panel
         self._update_panel_visibility()
         self._update_status_bar()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id != "command-input":
+            return
+        event.stop()
+        raw_value = event.value
+        self._hide_command_prompt()
+        self._handle_command(raw_value)
+
+    def on_input_blurred(self, event: Input.Blurred) -> None:
+        if event.input.id != "command-input":
+            return
+        if self._command_prompt_visible():
+            self._hide_command_prompt()
+
+    def _set_status_message(self, message: str) -> None:
+        self._status_message = message or None
+        self._update_status_bar()
+
+    def _show_command_prompt(self, initial: str) -> None:
+        if not self._command_input:
+            return
+        self._command_active = True
+        self._command_input.styles.display = "block"
+        self._command_input.value = initial
+        self._command_input.cursor_position = len(self._command_input.value)
+        self.set_focus(self._command_input)
+
+    def _hide_command_prompt(self) -> None:
+        if not self._command_input:
+            return
+        self._command_active = False
+        self._command_input.value = ""
+        self._command_input.styles.display = "none"
+        active = (
+            self.query_one("#request-container", VerticalScroll)
+            if self._active_panel == "request"
+            else self.query_one("#response-container", VerticalScroll)
+        )
+        self.set_focus(active)
+
+    def _command_prompt_visible(self) -> bool:
+        return self._command_active
+
+    def _handle_command(self, raw_command: str) -> None:
+        command = raw_command.strip()
+        if not command:
+            self._set_status_message("No command entered")
+            return
+
+        if command.startswith(":"):
+            command = command[1:].lstrip()
+        if not command:
+            self._set_status_message("No command entered")
+            return
+
+        parts = command.split(None, 1)
+        name = parts[0]
+        remainder = parts[1] if len(parts) > 1 else ""
+
+        if name == "cp":
+            self._handle_copy_command(remainder, raw_command)
+            return
+
+        self._set_status_message(f"Unknown command: {raw_command.strip()}")
+        self.app.bell()
+
+    def _handle_copy_command(self, remainder: str, _: str) -> None:
+        target = remainder.strip().lower()
+        if not target:
+            self._set_status_message("Usage: :cp request|response")
+            self.app.bell()
+            return
+
+        aliases = {
+            "req": "request",
+            "request": "request",
+            "res": "response",
+            "resp": "response",
+            "response": "response",
+        }
+
+        resolved = aliases.get(target)
+        if not resolved:
+            self._set_status_message(f"Unknown copy target: {target}")
+            self.app.bell()
+            return
+
+        self._copy_flow_section(resolved)
+
+    def _copy_flow_section(self, section: str) -> None:
+        if section == "request":
+            request = self._flow.request
+            if request is None:
+                self._set_status_message("Selected flow has no request to copy")
+                self.app.bell()
+                return
+            body = self._get_body_text(request.get_text(strict=False), request.raw_content)
+            label = "Request body"
+        else:
+            response = self._flow.response
+            if response is None:
+                self._set_status_message("Selected flow has no response to copy")
+                self.app.bell()
+                return
+            body = self._get_body_text(response.get_text(strict=False), response.raw_content)
+            label = "Response body"
+
+        self.app.copy_to_clipboard(body)
+        if body:
+            self._set_status_message(f"{label} copied to clipboard")
+        else:
+            self._set_status_message(f"{label} copied to clipboard (empty)")
+
+    @staticmethod
+    def _get_body_text(text_value: str | None, raw_content: bytes | None) -> str:
+        if text_value:
+            return text_value
+        if raw_content:
+            try:
+                return raw_content.decode("utf-8")
+            except UnicodeDecodeError:
+                return raw_content.decode("utf-8", errors="replace")
+        return ""
 
 
 def _format_headers(headers: Iterable[tuple[str, str]] | None) -> list[str]:
