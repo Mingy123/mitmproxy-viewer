@@ -291,6 +291,7 @@ class FlowListScreen(Screen):
                 status_value,
             ) - 10
             path_value = self._limit_cell_text(path_value, path_limit)
+            path_cell = self._path_text(path_value)
             method_cell = self._text_with_palette(method_value)
             host_cell = self._text_with_palette(host_value, source_value=host_source_value)
             status_cell = self._status_text(status_value)
@@ -300,7 +301,7 @@ class FlowListScreen(Screen):
                 https_cell,
                 method_cell,
                 host_cell,
-                path_value,
+                path_cell,
                 status_cell,
                 key=str(index - 1),
             )
@@ -472,6 +473,15 @@ class FlowListScreen(Screen):
         if value.lower() == "no":
             return Text(value, style=Style(color="bright_red", bold=True))
         return Text(value)
+
+    @staticmethod
+    def _path_text(path_value: str) -> Text:
+        if "?" not in path_value:
+            return Text(path_value)
+        base, query = path_value.split("?", 1)
+        text = Text(base)
+        text.append("?" + query, style=Style(color="grey50"))
+        return text
 
     def _calculate_path_limit(
         self,
