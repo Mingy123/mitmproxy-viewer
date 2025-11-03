@@ -45,3 +45,21 @@ def filter_flows_by_content_type(flows: Sequence[HTTPFlow], content_type: str) -
         if header_value and needle in header_value.lower():
             filtered.append(flow)
     return filtered
+
+
+def filter_flows_by_path_substring(flows: Sequence[HTTPFlow], matcher: str) -> list[HTTPFlow]:
+    """Return flows whose request path contains the provided substring."""
+
+    if not matcher:
+        return list(flows)
+
+    needle = matcher.lower()
+    filtered: list[HTTPFlow] = []
+    for flow in flows:
+        request = flow.request
+        if not request:
+            continue
+        path_value = request.path or ""
+        if needle in path_value.lower():
+            filtered.append(flow)
+    return filtered

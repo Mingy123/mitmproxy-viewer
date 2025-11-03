@@ -89,11 +89,13 @@ class FlowListScreen(Screen):
         flows: Sequence[HTTPFlow],
         source_path: Path,
         content_type_filter: str | None = None,
+        path_filter: str | None = None,
     ) -> None:
         super().__init__()
         self._flows = list(flows)
         self._source_path = source_path
         self._content_type_filter = content_type_filter
+        self._path_filter = path_filter
         self._status_message: str | None = None
         self._command_input: Input | None = None
         self._command_active = False
@@ -247,11 +249,13 @@ class FlowListScreen(Screen):
         self,
         flows: Sequence[HTTPFlow],
         content_type_filter: str | None,
+        path_filter: str | None,
         *,
         status_message: str | None = None,
     ) -> None:
         self._flows = list(flows)
         self._content_type_filter = content_type_filter
+        self._path_filter = path_filter
         if status_message is not None:
             self._status_message = status_message or None
         self._populate_table()
@@ -320,8 +324,10 @@ class FlowListScreen(Screen):
         )
         if self._content_type_filter:
             status_text += f" | Filter: {self._content_type_filter}"
-            if not self._flows:
-                status_text += " (no matches)"
+        if self._path_filter:
+            status_text += f" | Path filter: {self._path_filter}"
+        if not self._flows and (self._content_type_filter or self._path_filter):
+            status_text += " (no matches)"
         if self._status_message:
             status_text += f" | {self._status_message}"
         status.update(status_text)
@@ -507,7 +513,7 @@ class FlowListScreen(Screen):
     def _handle_set_command(self, remainder: str, _: str) -> None:
         remainder = remainder.strip()
         if not remainder:
-            self._set_status_message("Usage: :set ctype <value>")
+            self._set_status_message("Usage: :set ctype <value> | :set path <value>")
             self.app.bell()
             return
 
@@ -515,24 +521,37 @@ class FlowListScreen(Screen):
         option = option_parts[0]
         value = option_parts[1] if len(option_parts) > 1 else ""
 
-        if option != "ctype":
-            self._set_status_message(f"Unknown option: {option}")
-            self.app.bell()
-            return
-
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
             value = value[1:-1].strip()
-        if not value:
-            self.app.set_content_type_filter(
-                None,
-                status_message="Content-Type filter cleared",
-            )
-        else:
-            self.app.set_content_type_filter(
-                value,
-                status_message=f"Content-Type: {value}",
-            )
+        if option == "ctype":
+            if not value:
+                self.app.set_content_type_filter(
+                    None,
+                    status_message="Content-Type filter cleared",
+                )
+            else:
+                self.app.set_content_type_filter(
+                    value,
+                    status_message=f"Content-Type: {value}",
+                )
+            return
+
+        if option == "path":
+            if not value:
+                self.app.set_path_filter(
+                    None,
+                    status_message="Path filter cleared",
+                )
+            else:
+                self.app.set_path_filter(
+                    value,
+                    status_message=f"Path contains: {value}",
+                )
+            return
+
+        self._set_status_message(f"Unknown option: {option}")
+        self.app.bell()
 
     def _handle_copy_command(self, remainder: str, _: str) -> None:
         target = remainder.strip().lower()
